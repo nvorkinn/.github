@@ -1,4 +1,4 @@
-                                  name: Auto-approve PRs Template
+name: Auto-approve PRs Template
 
 on:
   workflow_call:
