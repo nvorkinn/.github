@@ -1,0 +1,44 @@
+name: Auto-approve PRs Template
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  auto-approve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Approve PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # The PR context is now nested inside the workflow_run payload
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" == "null" ]; then
+            echo "No PR associated with this workflow run (likely a direct push to main). Skipping."
+            exit 0
+          fi
+          
+          # Optional: Prevent approving draft PRs using the API
+          is_draft=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.draft')
+          if [ "$is_draft" == "true" ]; then
+            echo "PR is still a draft. Skipping approval."
+            exit 0
+          fi
+
+          current_sha=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')
+          if [ "$current_sha" != "$SHA" ]; then
+            echo "::error::The PR head changed after the CI workflow started; refusing to approve."
+            exit 1
+          fi
+          
+          echo "Approving PR #$PR_NUMBER for commit $SHA..."
+          gh api --method POST "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+            -f event=APPROVE -f commit_id="$SHA" --jq '.state'
