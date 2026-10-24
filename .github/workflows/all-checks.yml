@@ -21,6 +21,12 @@ name: All checks
 #       with:
 #         approve: true  # optional: also approve the pull request when everything passed
 on:
+  # This repository's own pull requests: when their Create Global PR Status run finishes, as a caller's trigger would
+  # list its workflows. A caller's trigger is its own, so this one is ignored when called. It doesn't approve (no
+  # `approve` input), and this repository's workflows don't allow it to.
+  workflow_run:
+    workflows: [ Create Global PR Status ]
+    types: [ completed ]
   workflow_call:
     inputs:
       approve:
