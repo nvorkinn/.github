@@ -1,10 +1,11 @@
 name: All checks
 
-# Reusable. Completes the "Global PR Status" check (opened by create-global-pr-status.yml) on a pull request's head
-# commit. It is the one check branch protection requires: other workflows only run when their paths change, so
-# requiring them directly blocks every PR that doesn't touch them. Each workflow the caller lists in its workflow_run
-# trigger ends by running this once, and it looks at everything on the commit: if something is still running, the
-# last workflow to finish runs it again; if everything passed, the check succeeds; if anything failed, it fails.
+# Reusable. Completes the "Global PR Status" check (opened by create-global-pr-status.yml, and found by name on the
+# commit) on a pull request's head commit. It is the one check branch protection requires: other workflows only run
+# when their paths change, so requiring them directly blocks every PR that doesn't touch them. Each workflow the caller
+# lists in its workflow_run trigger ends by running this once, and it looks at everything on the commit: if something is
+# still running, the last workflow to finish runs it again; if everything passed, the check succeeds; if anything
+# failed, it fails.
 #
 # Call it from a workflow in the consumer repository (on its default branch), which owns the trigger:
 #
@@ -20,11 +21,6 @@ name: All checks
 on:
   workflow_call:
     inputs:
-      create-workflow-file:
-        description: File name, in the caller's .github/workflows, of the workflow that calls create-global-pr-status.yml.
-        required: false
-        type: string
-        default: create-global-pr-status.yml
       auto-approve-workflow-name:
         description: Name of the workflow that auto-approves, which waits for the status check and so can't be waited on.
         required: false
@@ -52,19 +48,17 @@ jobs:
           WORKFLOW_NAME: ${{ github.workflow }}
           # Auto-approve waits for the Global PR Status check, so waiting on it would deadlock.
           AUTO_APPROVE_WORKFLOW: ${{ inputs.auto-approve-workflow-name }}
-          CREATE_WORKFLOW: ${{ inputs.create-workflow-file }}
           # The status check itself is in progress until this finishes. Reusable jobs can have "caller / " prefixes.
           IGNORED_CHECKS: '["all-checks","auto-approve","Global PR Status"]'
         run: |
-          # The check run's ID comes from the latest Create Global PR Status run for this commit.
-          status_run=$(gh api "repos/$REPO/actions/workflows/$CREATE_WORKFLOW/runs?head_sha=$SHA&per_page=1" \
-            --jq '.workflow_runs[0] | select(.status == "completed") | .id')
-          if [ -z "$status_run" ]; then
-            echo "::notice::$CREATE_WORKFLOW hasn't finished for $SHA; its own completion runs this again."
+          # The status check opened on this commit by create-global-pr-status.yml. Fork and Dependabot pull requests have
+          # none, and until that workflow has run there isn't one yet; its own completion runs this again.
+          check_run=$(gh api "repos/$REPO/commits/$SHA/check-runs?check_name=Global%20PR%20Status&filter=latest" \
+            --jq '.check_runs | max_by(.id) | .id // empty')
+          if [ -z "$check_run" ]; then
+            echo "::notice::No Global PR Status check on $SHA yet (or ever, for a fork or Dependabot pull request)."
             exit 0
           fi
-          gh run download "$status_run" --repo "$REPO" --name global-pr-status --dir global-pr-status
-          check_run=$(< global-pr-status/check-run-id)
 
           ok='["success","skipped","neutral"]'
           runs=$(gh api --paginate "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" |
