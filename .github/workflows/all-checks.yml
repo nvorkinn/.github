@@ -1,0 +1,22 @@
+name: All Checks
+
+on:
+  workflow_call:
+    inputs:
+      needs_context:
+        description: "The JSON representation of the caller's needs context"
+        required: true
+        type: string
+
+jobs:
+  evaluate-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all upstream checks passed
+        run: |
+          # If the JSON contains a failure or cancellation, fail this job
+          if [[ "${{ contains(inputs.needs_context, 'failure') || contains(inputs.needs_context, 'cancelled') }}" == "true" ]]; then
+            echo "One or more required checks failed."
+            exit 1
+          fi
+          echo "All checks passed successfully!"
