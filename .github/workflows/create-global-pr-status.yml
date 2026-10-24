@@ -15,6 +15,9 @@ name: Create Global PR Status
 #     create-global-pr-status:
 #       uses: nvorkinn/.github/.github/workflows/create-global-pr-status.yml@main
 on:
+  # This repository's own pull requests, as a caller's would be.
+  pull_request:
+    types: [ opened, synchronize, reopened ]
   workflow_call:
 
 permissions:
