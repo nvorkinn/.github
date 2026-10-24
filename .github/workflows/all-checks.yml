@@ -26,6 +26,12 @@ on:
         required: false
         type: string
         default: Auto-approve PRs
+    outputs:
+      conclusion:
+        description: >-
+          What this run found: success or failure (the status check is completed that way), pending (something is still
+          running), or none (no status check on the commit). Empty when the run wasn't for a pull request.
+        value: ${{ jobs.all-checks.outputs.conclusion }}
 
 permissions:
   actions: read
@@ -38,8 +44,11 @@ jobs:
     # CodeQL's default setup runs with the event "dynamic".
     if: contains(fromJSON('["pull_request", "dynamic"]'), github.event.workflow_run.event)
     timeout-minutes: 5
+    outputs:
+      conclusion: ${{ steps.settle.outputs.conclusion }}
     steps:
       - name: Settle the Global PR Status check
+        id: settle
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -57,6 +66,7 @@ jobs:
             --jq '.check_runs | max_by(.id) | .id // empty')
           if [ -z "$check_run" ]; then
             echo "::notice::No Global PR Status check on $SHA yet (or ever, for a fork or Dependabot pull request)."
+            echo "conclusion=none" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -80,6 +90,7 @@ jobs:
             gh api --method PATCH "repos/$REPO/check-runs/$check_run" -f status=completed -f conclusion=failure \
               -f 'output[title]=Some checks failed' \
               -f "output[summary]=$(jq -r '.[] | "- \(.name): \(.conclusion) \(.url)"' <<<"$failed")" --jq .conclusion
+            echo "conclusion=failure" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -87,9 +98,11 @@ jobs:
             '[$runs[], $checks[] | select(.status != "completed") | .name]')
           if [ "$(jq length <<<"$pending")" -gt 0 ]; then
             echo "Still running: $(jq -r 'join(", ")' <<<"$pending"). The last of them to finish runs this again."
+            echo "conclusion=pending" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "All checks passed:"
           jq -r '.[] | "  \(.name): \(.conclusion)"' <<<"$checks"
           gh api --method PATCH "repos/$REPO/check-runs/$check_run" -f status=completed -f conclusion=success --jq .conclusion
+          echo "conclusion=success" >> "$GITHUB_OUTPUT"
