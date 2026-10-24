@@ -91,6 +91,21 @@ jobs:
             exit 0
           fi
 
+          # From here the status check is this script's to settle. If it dies first (a failed API call, a timeout), fail
+          # the check instead of leaving it in progress for good; re-running the workflow settles it again.
+          settled=false
+          fail_unsettled() {
+            local status=$?
+            if [ "$status" -ne 0 ] && [ "$settled" != true ]; then
+              gh api --method PATCH "repos/$REPO/check-runs/$check_run" -f status=completed -f conclusion=failure \
+                -f 'output[title]=All checks failed to run' \
+                -f "output[summary]=It errored before it could settle this check: $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID" \
+                --jq .conclusion || echo "::warning::Couldn't fail the Global PR Status check either."
+            fi
+          }
+          trap fail_unsettled EXIT
+          trap 'exit 143' TERM INT
+
           ok='["success","skipped","neutral"]'
           runs=$(gh api --paginate "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" |
             jq -s --arg workflow "$WORKFLOW_NAME" '
@@ -111,6 +126,7 @@ jobs:
             gh api --method PATCH "repos/$REPO/check-runs/$check_run" -f status=completed -f conclusion=failure \
               -f 'output[title]=Some checks failed' \
               -f "output[summary]=$(jq -r '.[] | "- \(.name): \(.conclusion) \(.url)"' <<<"$failed")" --jq .conclusion
+            settled=true
             exit 0
           fi
 
@@ -127,3 +143,4 @@ jobs:
             approve || echo "::warning::Couldn't approve the pull request at $SHA."
           fi
           gh api --method PATCH "repos/$REPO/check-runs/$check_run" -f status=completed -f conclusion=success --jq .conclusion
+          settled=true
