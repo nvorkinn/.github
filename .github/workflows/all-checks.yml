@@ -14,10 +14,12 @@ name: All checks
 #     workflow_run:
 #       workflows: [ Create Global PR Status, Tests ]  # every workflow that runs on pull requests, except auto-approve
 #       types: [ completed ]
-#   permissions: { actions: read, checks: write }
+#   permissions: { actions: read, checks: write, contents: read, pull-requests: write }
 #   jobs:
 #     all-checks:
 #       uses: nvorkinn/.github/.github/workflows/all-checks.yml@main
+#       with:
+#         approve: true  # optional: also approve the pull request when everything passed
 on:
   workflow_call:
     inputs:
@@ -26,16 +28,19 @@ on:
         required: false
         type: string
         default: Auto-approve PRs
-    outputs:
-      conclusion:
+      approve:
         description: >-
-          What this run found: success or failure (the status check is completed that way), pending (something is still
-          running), or none (no status check on the commit). Empty when the run wasn't for a pull request.
-        value: ${{ jobs.all-checks.outputs.conclusion }}
+          Approve the pull request's commit just before the status check succeeds. Needs "Allow GitHub Actions to
+          create and approve pull requests" enabled in the repository's settings. Skips drafts, forks and bots.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: read
   checks: write
+  contents: read
+  pull-requests: write
 
 jobs:
   all-checks:
@@ -44,11 +49,8 @@ jobs:
     # CodeQL's default setup runs with the event "dynamic".
     if: contains(fromJSON('["pull_request", "dynamic"]'), github.event.workflow_run.event)
     timeout-minutes: 5
-    outputs:
-      conclusion: ${{ steps.settle.outputs.conclusion }}
     steps:
       - name: Settle the Global PR Status check
-        id: settle
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,14 +61,40 @@ jobs:
           AUTO_APPROVE_WORKFLOW: ${{ inputs.auto-approve-workflow-name }}
           # The status check itself is in progress until this finishes. Reusable jobs can have "caller / " prefixes.
           IGNORED_CHECKS: '["all-checks","auto-approve","Global PR Status"]'
+          APPROVE: ${{ inputs.approve }}
         run: |
+          # Approves the open pull requests whose head is this commit, once each. Failing to is a warning, not a
+          # failure, so the status check below is completed either way.
+          approve() {
+            local numbers number approved current
+            numbers=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '
+              .[] | select(.state == "open" and (.draft | not) and .head.sha == env.SHA
+                           and .head.repo.full_name == env.REPO and .user.type != "Bot") | .number') || return 1
+            for number in $numbers; do
+              approved=$(gh api --paginate "repos/$REPO/pulls/$number/reviews" --jq '
+                .[] | select(.user.login == "github-actions[bot]" and .state == "APPROVED" and .commit_id == env.SHA)
+                | .id') || return 1
+              if [ -n "$approved" ]; then
+                echo "#$number: already approved at $SHA."
+                continue
+              fi
+              current=$(gh api "repos/$REPO/pulls/$number" --jq .head.sha) || return 1
+              if [ "$current" != "$SHA" ]; then
+                echo "::warning::#$number's head changed while checking; not approving $SHA."
+                continue
+              fi
+              echo "#$number: approving $SHA."
+              gh api --method POST "repos/$REPO/pulls/$number/reviews" -f event=APPROVE -f commit_id="$SHA" \
+                --jq '"#'"$number"': " + .state' || return 1
+            done
+          }
+
           # The status check opened on this commit by create-global-pr-status.yml. Fork and Dependabot pull requests have
           # none, and until that workflow has run there isn't one yet; its own completion runs this again.
           check_run=$(gh api "repos/$REPO/commits/$SHA/check-runs?check_name=Global%20PR%20Status&filter=latest" \
             --jq '.check_runs | max_by(.id) | .id // empty')
           if [ -z "$check_run" ]; then
             echo "::notice::No Global PR Status check on $SHA yet (or ever, for a fork or Dependabot pull request)."
-            echo "conclusion=none" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -90,7 +118,6 @@ jobs:
             gh api --method PATCH "repos/$REPO/check-runs/$check_run" -f status=completed -f conclusion=failure \
               -f 'output[title]=Some checks failed' \
               -f "output[summary]=$(jq -r '.[] | "- \(.name): \(.conclusion) \(.url)"' <<<"$failed")" --jq .conclusion
-            echo "conclusion=failure" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -98,11 +125,12 @@ jobs:
             '[$runs[], $checks[] | select(.status != "completed") | .name]')
           if [ "$(jq length <<<"$pending")" -gt 0 ]; then
             echo "Still running: $(jq -r 'join(", ")' <<<"$pending"). The last of them to finish runs this again."
-            echo "conclusion=pending" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "All checks passed:"
           jq -r '.[] | "  \(.name): \(.conclusion)"' <<<"$checks"
+          if [ "$APPROVE" = "true" ]; then
+            approve || echo "::warning::Couldn't approve the pull request at $SHA."
+          fi
           gh api --method PATCH "repos/$REPO/check-runs/$check_run" -f status=completed -f conclusion=success --jq .conclusion
-          echo "conclusion=success" >> "$GITHUB_OUTPUT"
