@@ -12,7 +12,7 @@ name: All checks
 #   name: All checks
 #   on:
 #     workflow_run:
-#       workflows: [ Create Global PR Status, Tests ]  # every workflow that runs on pull requests, except auto-approve
+#       workflows: [ Create Global PR Status, Tests ]  # every workflow that runs on pull requests
 #       types: [ completed ]
 #   permissions: { actions: read, checks: write, contents: read, pull-requests: write }
 #   jobs:
@@ -23,11 +23,6 @@ name: All checks
 on:
   workflow_call:
     inputs:
-      auto-approve-workflow-name:
-        description: Name of the workflow that auto-approves, which waits for the status check and so can't be waited on.
-        required: false
-        type: string
-        default: Auto-approve PRs
       approve:
         description: >-
           Approve the pull request's commit just before the status check succeeds. Needs "Allow GitHub Actions to
@@ -57,10 +52,8 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.workflow_run.head_sha }}
           WORKFLOW_NAME: ${{ github.workflow }}
-          # Auto-approve waits for the Global PR Status check, so waiting on it would deadlock.
-          AUTO_APPROVE_WORKFLOW: ${{ inputs.auto-approve-workflow-name }}
           # The status check itself is in progress until this finishes. Reusable jobs can have "caller / " prefixes.
-          IGNORED_CHECKS: '["all-checks","auto-approve","Global PR Status"]'
+          IGNORED_CHECKS: '["all-checks","Global PR Status"]'
           APPROVE: ${{ inputs.approve }}
         run: |
           # Approves the open pull requests whose head is this commit, once each. Failing to is a warning, not a
@@ -100,8 +93,8 @@ jobs:
 
           ok='["success","skipped","neutral"]'
           runs=$(gh api --paginate "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" |
-            jq -s --arg workflow "$WORKFLOW_NAME" --arg approval "$AUTO_APPROVE_WORKFLOW" '
-              [.[].workflow_runs[] | select(.name != $workflow and .name != $approval)]
+            jq -s --arg workflow "$WORKFLOW_NAME" '
+              [.[].workflow_runs[] | select(.name != $workflow)]
               | group_by([.workflow_id, .event]) | map(max_by(.id))
               | map({name, status, conclusion, url: .html_url})')
           checks=$(gh api --paginate "repos/$REPO/commits/$SHA/check-runs?filter=latest&per_page=100" |
