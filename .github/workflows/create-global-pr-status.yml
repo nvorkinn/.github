@@ -1,8 +1,9 @@
 name: Create Global PR Status
 
 # Reusable. Opens the "Global PR Status" check on a pull request's head commit, in progress; all-checks.yml finds it by
-# name and completes it once every other workflow and check on that commit has passed. Fork and Dependabot pull
-# requests get a read-only token, which can't create a check.
+# name and completes it once every other workflow and check on that commit has passed. Fork pull requests get a
+# read-only token, which can't create a check. Dependabot's token starts read-only too, but the permissions key below
+# raises it, so Dependabot pull requests get the check and can auto-merge.
 #
 # Call it from a workflow in the consumer repository:
 #
@@ -26,11 +27,7 @@ permissions:
 jobs:
   create-global-pr-status:
     runs-on: ubuntu-latest
-    if: >-
-      ${{
-        github.event.pull_request.head.repo.full_name == github.repository &&
-        github.actor != 'dependabot[bot]'
-      }}
+    if: github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 5
     steps:
       - name: Create the check run
