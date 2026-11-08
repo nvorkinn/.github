@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # The Bitwarden CLI the vaultwarden-secrets action runs.
+  - package-ecosystem: "npm"
+    directory: "/actions/vaultwarden-secrets/bitwarden-cli"
+    schedule:
+      interval: "weekly"

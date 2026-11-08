@@ -1,0 +1,75 @@
+name: Fetch secrets from Vaultwarden
+description: >-
+  Reads a deploy's secrets from Vaultwarden with the pinned Bitwarden CLI and writes one <name>.env file per file of the
+  repository's secrets map, for the deploy to stage. Each secret is a login item named by its bare variable
+  (REDIS_PASSWORD), with the value as its password, in the collection of the target (countdown-server/dev). An item
+  several projects share sits in each one's collection. The job fails, before anything is deployed, if an item is missing,
+  empty or ambiguous.
+
+# Use it from a job of the consumer repository, after actions/checkout (for the map):
+#
+#   - uses: nvorkinn/.github/actions/vaultwarden-secrets@<commit>
+#     with:
+#       map: secrets-map.json
+#       target: dev
+#       collection: countdown-server/dev
+#       bw-clientid: ${{ secrets.BW_CLIENTID }}
+#       bw-clientsecret: ${{ secrets.BW_CLIENTSECRET }}
+#       bw-password: ${{ secrets.BW_PASSWORD }}
+#
+# The map is {"<target>": {"<file>.env": {"<VARIABLE>": "<item name>"}}}. The files are in the `dir` output; delete them
+# once the deploy has used them.
+inputs:
+  map:
+    description: Path of the secrets map, relative to the workspace.
+    required: true
+  target:
+    description: The key of the map to fetch, dev or prod.
+    required: true
+  collection:
+    description: The Vaultwarden collection holding the target's items, e.g. countdown-server/dev.
+    required: true
+  dir:
+    description: A new directory for the env files.
+    default: ${{ runner.temp }}/secrets
+  server:
+    description: The Vaultwarden server.
+    default: https://vault.nikolaivorkinn.com
+  bw-clientid:
+    description: The API key's client id of the user that may read the collection.
+    required: true
+  bw-clientsecret:
+    description: The API key's secret.
+    required: true
+  bw-password:
+    description: That user's master password, which `bw unlock` needs even after an API-key login.
+    required: true
+outputs:
+  dir:
+    description: The directory the env files were written to.
+    value: ${{ inputs.dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install the pinned Bitwarden CLI
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        npm ci --prefix "$ACTION_PATH/bitwarden-cli" --ignore-scripts --no-audit --no-fund --loglevel=error
+        echo "$ACTION_PATH/bitwarden-cli/node_modules/.bin" >> "$GITHUB_PATH"
+
+    - name: Fetch the secrets
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        MAP: ${{ inputs.map }}
+        TARGET: ${{ inputs.target }}
+        COLLECTION: ${{ inputs.collection }}
+        OUT_DIR: ${{ inputs.dir }}
+        BW_SERVER: ${{ inputs.server }}
+        BW_CLIENTID: ${{ inputs.bw-clientid }}
+        BW_CLIENTSECRET: ${{ inputs.bw-clientsecret }}
+        BW_PASSWORD: ${{ inputs.bw-password }}
+      run: bash "$ACTION_PATH/fetch-secrets.sh"
