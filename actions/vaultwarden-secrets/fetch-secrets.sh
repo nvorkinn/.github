@@ -72,6 +72,8 @@ read_all() {
   while IFS=$'\t' read -r file key item; do
     if ! value="$(lookup "$item" 2>&1)"; then problem="$item: $value"; return 1; fi
     if [ -z "$value" ]; then problem="$item: empty"; return 1; fi
+    # One line per value: a line break would split an env file's entries, or inject variables into $GITHUB_ENV.
+    if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then problem="$item: has a line break"; return 1; fi
     # Keep the value out of the job's log, should something print it.
     while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$value"
     printf '%s=%s\n' "$key" "$value" >> "$out/$file"

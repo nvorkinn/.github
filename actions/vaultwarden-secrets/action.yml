@@ -17,7 +17,8 @@ description: >-
 #       bw-clientsecret: ${{ secrets.BW_CLIENTSECRET }}
 #       bw-password: ${{ secrets.BW_PASSWORD }}
 #
-# The map is {"<target>": {"<file>.env": {"<VARIABLE>": "<item name>"}}}. The files are in the `dir` output; delete them
+# With `export-env: true` the values go to the rest of the job's environment instead (Terraform and the like), and no
+# file is left. The map is {"<target>": {"<file>.env": {"<VARIABLE>": "<item name>"}}}. The files are in the `dir` output; delete them
 # once the deploy has used them.
 inputs:
   map:
@@ -35,6 +36,11 @@ inputs:
   server:
     description: The Vaultwarden server.
     default: https://vault.nikolaivorkinn.com
+  export-env:
+    description: >-
+      "true" exports every value to the rest of the job's steps as an environment variable (masked) and deletes the
+      files, for tools that read their credentials from the environment. Otherwise the files are left in `dir`.
+    default: "false"
   bw-clientid:
     description: The API key's client id of the user that may read the collection.
     required: true
@@ -46,7 +52,7 @@ inputs:
     required: true
 outputs:
   dir:
-    description: The directory the env files were written to.
+    description: The directory the env files were written to (deleted when export-env is true).
     value: ${{ inputs.dir }}
 
 runs:
@@ -73,3 +79,19 @@ runs:
         BW_CLIENTSECRET: ${{ inputs.bw-clientsecret }}
         BW_PASSWORD: ${{ inputs.bw-password }}
       run: bash "$ACTION_PATH/fetch-secrets.sh"
+
+    # Each value goes in with a delimiter of its own, as GitHub's docs advise for $GITHUB_ENV, so no value can end its own
+    # entry. fetch-secrets.sh has already refused a value with a line break and masked every value.
+    - name: Export the secrets to the job
+      if: inputs.export-env == 'true'
+      shell: bash
+      env:
+        OUT_DIR: ${{ inputs.dir }}
+      run: |
+        for file in "$OUT_DIR"/*.env; do
+          while IFS= read -r line; do
+            delimiter="vaultwarden_$(openssl rand -hex 16)"
+            printf '%s<<%s\n%s\n%s\n' "${line%%=*}" "$delimiter" "${line#*=}" "$delimiter" >> "$GITHUB_ENV"
+          done < "$file"
+        done
+        rm -rf "$OUT_DIR"
