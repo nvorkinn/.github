@@ -35,7 +35,7 @@ inputs:
     default: ${{ runner.temp }}/secrets
   server:
     description: The Vaultwarden server.
-    default: https://vault.nikolaivorkinn.com
+    default: https://vault.vorkinn.org
   export-env:
     description: >-
       "true" exports every value to the rest of the job's steps as an environment variable (masked) and deletes the
