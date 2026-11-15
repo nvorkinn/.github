@@ -31,7 +31,8 @@ lap() { echo "  $1: $((SECONDS - lap_start))s"; lap_start=$SECONDS; }
 # The CLI's state (its tokens) in a directory of its own, removed at the end, with the decrypted items next to it.
 BITWARDENCLI_APPDATA_DIR="$(mktemp -d)"
 export BITWARDENCLI_APPDATA_DIR BW_NOINTERACTION=true
-trap 'bw logout >/dev/null 2>&1 || true; rm -rf "$BITWARDENCLI_APPDATA_DIR"' EXIT
+# No `bw logout` (it took ~3s): it only clears the CLI's local state, and removing the directory does that.
+trap 'rm -rf "$BITWARDENCLI_APPDATA_DIR"' EXIT
 items="$BITWARDENCLI_APPDATA_DIR/items.json"
 # The CLI makes up a random device id (global_applicationId_appId) in a fresh state directory, so every run would be a
 # new device to Vaultwarden, which emails "new device logged in" each time. A fixed one makes it the same device.
