@@ -58,14 +58,22 @@ outputs:
 runs:
   using: composite
   steps:
-    # The installed CLI, kept between runs (npm ci took ~7s of each deploy). The key is this action's commit, which pins
-    # package-lock.json, so a new lock is a new key; hashFiles can't read the action's own directory.
+    # The installed CLI, kept between runs (npm ci took ~7s of each deploy), keyed on its lock file so a new lock installs
+    # afresh whatever ref the caller uses (a branch, a commit or a local path). hashFiles can't read the action's own
+    # directory, hence the step.
+    - name: Hash the CLI's lock file
+      id: cli-lock
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: echo "hash=$(sha256sum "$ACTION_PATH/bitwarden-cli/package-lock.json" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
     - name: Restore the Bitwarden CLI
       id: cli-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ github.action_path }}/bitwarden-cli/node_modules
-        key: bitwarden-cli-${{ runner.os }}-${{ runner.arch }}-${{ github.action_ref }}
+        key: bitwarden-cli-${{ runner.os }}-${{ runner.arch }}-${{ steps.cli-lock.outputs.hash }}
 
     - name: Install the pinned Bitwarden CLI
       shell: bash
