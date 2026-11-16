@@ -8,3 +8,7 @@
 - Resolve git conflicts by merging the main branch into the dev branch instead of rebasing, as the latter requires a force push.
 - When a PR is merged, switch back to main, pull, and delete the local dev branch (`git checkout main && git pull && git branch -D <branch>`). GitHub deletes the remote branch automatically on merge, so the local one is pointless. Don't discard uncommitted changes when switching.
 - Don't start work until explicitly told to. For example, when asked a question, simply run the required analysis and answer the question - don't start making code changes.
+
+# Retired names
+
+- `auth-broker` (countdown-server's old name; its host directory is now `/opt/countdown-server`) and the domain `nikolaivorkinn.com` are retired. Never reintroduce them in code, docs, test fixtures or settings. Use `countdown-server`, `countdown.run` (Countdown's domain) and `vorkinn.org` (everything else, e.g. `vault.vorkinn.org`). If either old name turns up, treat it as stale and replace it.
