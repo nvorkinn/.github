@@ -1,7 +1,22 @@
 version: 2
+
+# Every update below lands in one pull request, whichever ecosystem it comes from.
+multi-ecosystem-groups:
+  all-dependencies:
+    schedule:
+      interval: "weekly"
+
 updates:
   # The Bitwarden CLI the vaultwarden-secrets action runs.
   - package-ecosystem: "npm"
     directory: "/actions/vaultwarden-secrets/bitwarden-cli"
-    schedule:
-      interval: "weekly"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
+
+  # Actions pinned in the workflows ("/") and in the vaultwarden-secrets composite action.
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/"
+      - "/actions/vaultwarden-secrets"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
